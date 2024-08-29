@@ -1,0 +1,125 @@
+#include <ros/ros.h>
+#include <unitree_legged_msgs/HighState.h>
+#include <kdl_parser/kdl_parser.hpp>
+#include <kdl/chain.hpp>
+#include <kdl/chainjnttojacsolver.hpp>
+#include <Eigen/Dense>
+#include <iostream>
+
+// Define vectors to store joint configurations and estimated torques for each leg
+Eigen::VectorXd all_q(12), all_tauEst(12);
+Eigen::Vector3d q_FR, q_FL, q_RR, q_RL;
+Eigen::Vector3d tau_FR, tau_FL, tau_RR, tau_RL;
+
+// Define callback function to handle high state messages
+void highStateCallback(const unitree_legged_msgs::HighState::ConstPtr& msg)
+{
+    // Extract all joint configurations (q) and estimated joint torques (tauEst)
+    for (int i = 0; i < 12; ++i) {
+        all_q(i) = msg->motorState[i].q;
+        all_tauEst(i) = msg->motorState[i].tauEst;
+    }
+
+    // Separate joint configurations and estimated torques for each leg
+    q_FR = all_q.segment<3>(0);
+    q_FL = all_q.segment<3>(3);
+    q_RR = all_q.segment<3>(6);
+    q_RL = all_q.segment<3>(9);
+
+    tau_FR = all_tauEst.segment<3>(0);
+    tau_FL = all_tauEst.segment<3>(3);
+    tau_RR = all_tauEst.segment<3>(6);
+    tau_RL = all_tauEst.segment<3>(9);
+}
+
+int main(int argc, char **argv) {
+    // Initialize ROS node
+    ros::init(argc, argv, "your_node_name");
+    ros::NodeHandle nh;
+
+    // Subscribe to high state topic
+    ros::Subscriber high_state_sub = nh.subscribe<unitree_legged_msgs::HighState>(
+        "/high_state", 1, highStateCallback
+    );
+
+    // Define loop rate (adjust as needed)
+    ros::Rate loop_rate(500); // 10 Hz
+
+    // URDF file path
+    std::string urdf_file = "/home/con/catkin_ws/src/unitree_ros/robots/go1_description/urdf/go1.urdf";
+
+    // Initialize KDL variables
+    KDL::Tree tree;
+    if (!kdl_parser::treeFromFile(urdf_file, tree)) {
+        std::cerr << "Failed to parse URDF file." << std::endl;
+        return 1;
+    }
+
+    // Compute Jacobian for each leg
+    KDL::Chain chain_FR, chain_FL, chain_RR, chain_RL;
+    if (!tree.getChain("base", "FR_foot", chain_FR) ||
+        !tree.getChain("base", "FL_foot", chain_FL) ||
+        !tree.getChain("base", "RR_foot", chain_RR) ||
+        !tree.getChain("base", "RL_foot", chain_RL)) {
+        std::cerr << "Failed to extract chains from URDF." << std::endl;
+        return 1;
+    }
+
+    KDL::ChainJntToJacSolver jac_solver_FR(chain_FR);
+    KDL::ChainJntToJacSolver jac_solver_FL(chain_FL);
+    KDL::ChainJntToJacSolver jac_solver_RR(chain_RR);
+    KDL::ChainJntToJacSolver jac_solver_RL(chain_RL);
+
+    // Main loop
+    while (ros::ok()) {
+        ros::spinOnce(); // Process any incoming messages
+
+        // Compute Jacobian for each leg using dynamic q values
+        KDL::Jacobian jac_FR(chain_FR.getNrOfJoints());
+        KDL::Jacobian jac_FL(chain_FL.getNrOfJoints());
+        KDL::Jacobian jac_RR(chain_RR.getNrOfJoints());
+        KDL::Jacobian jac_RL(chain_RL.getNrOfJoints());
+
+        KDL::JntArray q_array_FR(3), q_array_FL(3), q_array_RR(3), q_array_RL(3);
+        for (int i = 0; i < 3; ++i) {
+            q_array_FR(i) = q_FR(i);
+            q_array_FL(i) = q_FL(i);
+            q_array_RR(i) = q_RR(i);
+            q_array_RL(i) = q_RL(i);
+        }
+
+        jac_solver_FR.JntToJac(q_array_FR, jac_FR);
+        jac_solver_FL.JntToJac(q_array_FL, jac_FL);
+        jac_solver_RR.JntToJac(q_array_RR, jac_RR);
+        jac_solver_RL.JntToJac(q_array_RL, jac_RL);
+
+        // Compute inverse and transpose for each leg
+        Eigen::MatrixXd J_inv_FR = jac_FR.data.topLeftCorner(3, jac_FR.columns()).transpose().inverse();
+        Eigen::MatrixXd J_inv_FL = jac_FL.data.topLeftCorner(3, jac_FL.columns()).transpose().inverse();
+        Eigen::MatrixXd J_inv_RR = jac_RR.data.topLeftCorner(3, jac_RR.columns()).transpose().inverse();
+        Eigen::MatrixXd J_inv_RL = jac_RL.data.topLeftCorner(3, jac_RL.columns()).transpose().inverse();
+
+        // Print results
+        std::cout << "T-Inverse of Jacobian matrix for FR leg:" << std::endl;
+        std::cout << J_inv_FR << std::endl;
+
+        std::cout << "T-Inverse of Jacobian matrix for FL leg:" << std::endl;
+        std::cout << J_inv_FL << std::endl;
+
+        std::cout << "T-Inverse of Jacobian matrix for RR leg:" << std::endl;
+        std::cout << J_inv_RR << std::endl;
+
+        std::cout << "T-Inverse of Jacobian matrix for RL leg:" << std::endl;
+        std::cout << J_inv_RL << std::endl;
+
+        // Print torques for each leg
+        std::cout << "Torque for FR leg: " << tau_FR.transpose() << std::endl;
+        std::cout << "Torque for FL leg: " << tau_FL.transpose() << std::endl;
+        std::cout << "Torque for RR leg: " << tau_RR.transpose() << std::endl;
+        std::cout << "Torque for RL leg: " << tau_RL.transpose() << std::endl;
+
+        loop_rate.sleep(); // Control the loop rate
+    }
+
+    return 0;
+}

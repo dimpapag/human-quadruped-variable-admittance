@@ -1,0 +1,98 @@
+#include <kdl_parser/kdl_parser.hpp>
+#include <kdl/chain.hpp>
+#include <kdl/chainiksolvervel_wdls.hpp>
+#include <kdl/frames_io.hpp>
+#include <Eigen/Dense>
+#include <iostream>
+
+int main(int argc, char **argv) {
+    // URDF file path
+    std::string urdf_file = "/home/con/catkin_ws/src/unitree_ros/robots/go1_description/urdf/go1.urdf";
+
+    // Joint positions for each leg represented as 3x1 vectors
+    Eigen::Vector3d q_FR;
+    q_FR << 0.1, 0.2, 0.3;
+
+    Eigen::Vector3d q_FL;
+    q_FL << 0.4, 0.5, 0.6;
+
+    Eigen::Vector3d q_RR;
+    q_RR << 0.7, 0.8, 0.9;
+
+    Eigen::Vector3d q_RL;
+    q_RL << 1.0, 1.1, 1.2;
+
+    // Initialize KDL variables
+    KDL::Tree tree;
+    if (!kdl_parser::treeFromFile(urdf_file, tree)) {
+        std::cerr << "Failed to parse URDF file." << std::endl;
+        return 1;
+    }
+
+    // Compute Jacobian for each leg
+    KDL::Chain chain_FR, chain_FL, chain_RR, chain_RL;
+    if (!tree.getChain("base", "FR_foot", chain_FR) ||
+        !tree.getChain("base", "FL_foot", chain_FL) ||
+        !tree.getChain("base", "RR_foot", chain_RR) ||
+        !tree.getChain("base", "RL_foot", chain_RL)) {
+        std::cerr << "Failed to extract chains from URDF." << std::endl;
+        return 1;
+    }
+
+    KDL::ChainJntToJacSolver jac_solver_FR(chain_FR);
+    KDL::ChainJntToJacSolver jac_solver_FL(chain_FL);
+    KDL::ChainJntToJacSolver jac_solver_RR(chain_RR);
+    KDL::ChainJntToJacSolver jac_solver_RL(chain_RL);
+
+    // Compute Jacobian for each leg
+    KDL::Jacobian jac_FR(chain_FR.getNrOfJoints());
+    KDL::Jacobian jac_FL(chain_FL.getNrOfJoints());
+    KDL::Jacobian jac_RR(chain_RR.getNrOfJoints());
+    KDL::Jacobian jac_RL(chain_RL.getNrOfJoints());
+
+    KDL::JntArray q_array_FR(3), q_array_FL(3), q_array_RR(3), q_array_RL(3);
+    for (int i = 0; i < 3; ++i) {
+        q_array_FR(i) = q_FR(i);
+        q_array_FL(i) = q_FL(i);
+        q_array_RR(i) = q_RR(i);
+        q_array_RL(i) = q_RL(i);
+    }
+
+    jac_solver_FR.JntToJac(q_array_FR, jac_FR);
+    jac_solver_FL.JntToJac(q_array_FL, jac_FL);
+    jac_solver_RR.JntToJac(q_array_RR, jac_RR);
+    jac_solver_RL.JntToJac(q_array_RL, jac_RL);
+
+    // Compute inverse and transpose for each leg
+    Eigen::MatrixXd J_inv_FR = jac_FR.data.topLeftCorner(3, jac_FR.columns()).transpose().inverse();
+    Eigen::MatrixXd J_inv_FL = jac_FL.data.topLeftCorner(3, jac_FL.columns()).transpose().inverse();
+    Eigen::MatrixXd J_inv_RR = jac_RR.data.topLeftCorner(3, jac_RR.columns()).transpose().inverse();
+    Eigen::MatrixXd J_inv_RL = jac_RL.data.topLeftCorner(3, jac_RL.columns()).transpose().inverse();
+
+    // Print results
+    std::cout << "T-Inverse of Jacobian matrix for FR leg:" << std::endl;
+    std::cout << J_inv_FR << std::endl;
+
+    std::cout << "T-Inverse of Jacobian matrix for FL leg:" << std::endl;
+    std::cout << J_inv_FL << std::endl;
+
+    std::cout << "T-Inverse of Jacobian matrix for RR leg:" << std::endl;
+    std::cout << J_inv_RR << std::endl;
+
+    std::cout << "T-Inverse of Jacobian matrix for RL leg:" << std::endl;
+    std::cout << J_inv_RL << std::endl;
+
+    // Randomly assign torques for each leg
+    Eigen::Vector3d tau_FR = Eigen::Vector3d::Random();
+    Eigen::Vector3d tau_FL = Eigen::Vector3d::Random();
+    Eigen::Vector3d tau_RR = Eigen::Vector3d::Random();
+    Eigen::Vector3d tau_RL = Eigen::Vector3d::Random();
+
+    // Print torques for each leg
+    std::cout << "Torque for FR leg: " << tau_FR.transpose() << std::endl;
+    std::cout << "Torque for FL leg: " << tau_FL.transpose() << std::endl;
+    std::cout << "Torque for RR leg: " << tau_RR.transpose() << std::endl;
+    std::cout << "Torque for RL leg: " << tau_RL.transpose() << std::endl;
+
+    return 0;
+}

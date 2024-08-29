@@ -1,0 +1,2 @@
+#pragma once
+void forward_kine(KDL::ChainFkSolverPos_recursive &fk_solver_FR, KDL::JntArray &q_FR_kdl, KDL::Frame &p_out_FR, KDL::ChainFkSolverPos_recursive &fk_solver_FL, KDL::JntArray &q_FL_kdl, KDL::Frame &p_out_FL, KDL::ChainFkSolverPos_recursive &fk_solver_RR, KDL::JntArray &q_RR_kdl, KDL::Frame &p_out_RR, KDL::ChainFkSolverPos_recursive &fk_solver_RL, KDL::JntArray &q_RL_kdl, KDL::Frame &p_out_RL);
